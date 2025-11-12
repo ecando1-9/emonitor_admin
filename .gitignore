@@ -11,3 +11,6 @@ node_modules# Dependencies
 
 # System files
 .DS_Store
+.env
+.env.local
+.env.*.local
