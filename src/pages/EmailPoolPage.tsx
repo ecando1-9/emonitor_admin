@@ -10,6 +10,8 @@ import { AlertCircle, Plus, Mail, Copy, Check } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
+// 1. IMPORT YOUR AUTH STORE
+import { useAuthStore } from '@/store/auth-store';
 
 interface EmailEntry {
   id: string;
@@ -27,6 +29,9 @@ export default function EmailPoolPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const { toast } = useToast();
+  
+  // 2. GET THE ADMIN OBJECT FROM THE STORE
+  const { admin } = useAuthStore();
 
   const [formData, setFormData] = useState({
     email: '',
@@ -36,9 +41,13 @@ export default function EmailPoolPage() {
     password: ''
   });
 
+  // 3. ADD 'admin' TO THE DEPENDENCY ARRAY
   useEffect(() => {
-    loadEmails();
-  }, []);
+    // 4. ADD A GUARD CLAUSE TO WAIT FOR AUTH
+    if (admin) {
+      loadEmails();
+    }
+  }, [admin]); // This useEffect will now re-run when 'admin' changes from null to a user
 
   const loadEmails = async () => {
     try {
