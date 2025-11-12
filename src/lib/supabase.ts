@@ -228,17 +228,35 @@ export const secureAPI = {
     return data;
   },
 
-  async unblockDeviceSecure(deviceHash: string) {
+  // FIX: Added 'justification' parameter
+  async unblockDeviceSecure(deviceHash: string, justification: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
     const { data, error } = await supabase.rpc('unblock_device_secure', {
       target_device_hash: deviceHash,
+      justification, // <-- Pass it to the RPC
       admin_id: user.id
     });
     if (error) throw error;
     return data;
   },
+
+  // === ADD THIS NEW FUNCTION ===
+  async resetDeviceTrialCount(deviceHash: string, justification: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    // NOTE: This assumes your RPC function in Supabase is named 'reset_device_trial_secure'
+    const { data, error } = await supabase.rpc('reset_device_trial_secure', {
+      target_device_hash: deviceHash,
+      justification,
+      admin_id: user.id
+    });
+    if (error) throw error;
+    return data;
+  },
+  // ==============================
 
   // === PLANS ===
 

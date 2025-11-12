@@ -7,7 +7,7 @@ import AppRoutes from './App'
 
 const router = createBrowserRouter(AppRoutes, {
   future: {
-    v7_startTransition: true,
+    
     v7_relativeSplatPath: true,
   },
 })

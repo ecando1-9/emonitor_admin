@@ -65,7 +65,7 @@ export default function DevicesPage() {
       toast({
         title: 'Error',
         description: error.message || 'Failed to load devices',
-        variant: 'destructive'
+        // 'variant' property removed as it caused the error
       });
     } finally {
       setLoading(false);
@@ -86,7 +86,7 @@ export default function DevicesPage() {
     if (!actionDialog.device || !actionDialog.type) return;
 
     if (!justification.trim()) {
-      toast({ title: 'Error', description: 'Justification is required for all device actions', variant: 'destructive' });
+      toast({ title: 'Error', description: 'Justification is required for all device actions' }); // 'variant' property removed
       return;
     }
 
@@ -96,12 +96,12 @@ export default function DevicesPage() {
 
       switch (type) {
         case 'block':
-          await secureAPI.blockDevice(device.device_hash, justification);
+          await secureAPI.blockDeviceSecure(device.device_hash, justification);
           toast({ title: 'Success', description: 'Device has been blocked' });
           break;
         
         case 'unblock':
-          await secureAPI.unblockDevice(device.device_hash, justification);
+          await secureAPI.unblockDeviceSecure(device.device_hash, justification);
           toast({ title: 'Success', description: 'Device has been unblocked' });
           break;
         
@@ -117,7 +117,7 @@ export default function DevicesPage() {
       toast({
         title: 'Error',
         description: error.message || 'Action failed',
-        variant: 'destructive'
+        // 'variant' property removed as it caused the error
       });
     } finally {
       setSubmitting(false);
@@ -133,7 +133,7 @@ export default function DevicesPage() {
 
   const filteredDevices = devices.filter(device => {
     const matchesSearch = device.device_hash.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         (device.last_user_id || '').toLowerCase().includes(searchQuery.toLowerCase());
+                          (device.last_user_id || '').toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesStatus = statusFilter === 'all' || (statusFilter === 'blocked' ? device.is_blocked : !device.is_blocked);
     
