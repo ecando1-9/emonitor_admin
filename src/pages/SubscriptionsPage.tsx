@@ -8,7 +8,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { supabase, secureAPI } from '@/lib/supabase';
-import { Loader2, Edit2, Mail, AlertCircle } from 'lucide-react';
+import { Loader2, Edit2, Mail, AlertCircle, Sparkles, Ticket } from 'lucide-react';
+import { useAuthStore } from '@/store/auth-store'; 
+import { Separator } from '@/components/ui/separator';
 
 interface UserWithDetails {
   user_id: string;
@@ -16,7 +18,9 @@ interface UserWithDetails {
   plan_id: string;
   plan_name: string;
   status: string;
-  trial_ends_at: string;
+  trial_ends_at: string | null;
+  subscription_ends_at: string | null; 
+  created_at: string; 
   device_hash: string;
   trial_count: number;
   sender_email?: string;
@@ -26,7 +30,7 @@ interface SenderAssignment {
   user_id: string;
   sender_id: string;
   sender_email: string;
-  assigned_at: string;
+  assigned_at: string; // This will now be a valid date string
 }
 
 interface Plan {
@@ -45,30 +49,43 @@ export default function SubscriptionsPage() {
   const [selectedUser, setSelectedUser] = useState<UserWithDetails | null>(null);
   const [newPlan, setNewPlan] = useState<string>('');
   const [upgrading, setUpgrading] = useState(false);
+  const [assigningEmail, setAssigningEmail] = useState<string | null>(null); 
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore(); 
+
+  const [promoCode, setPromoCode] = useState('');
+  const [applyingPromo, setApplyingPromo] = useState(false);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (isAuthLoading) {
+      setLoading(true);
+      return;
+    }
+    if (isAuthenticated) {
+      loadData();
+    } else {
+      setLoading(false);
+    }
+  }, [isAuthenticated, isAuthLoading]); 
 
   const loadData = async () => {
     try {
       setLoading(true);
 
-      // Load users with subscriptions
       const usersData = await secureAPI.getUsersWithSubscriptions();
       setUsers(usersData || []);
 
-      // Load plans
       const plansData = await secureAPI.getPlans();
       setPlans(plansData || []);
 
-      // Load sender assignments
+      // *** BUG FIX IS HERE ***
+      // 1. Added "assigned_at" to the select query
       const { data: sendersData } = await supabase
         .from('sender_assignments')
         .select(`
           id,
           user_id,
           sender_id,
+          assigned_at, 
           sender_pool (
             id,
             smtp_email
@@ -76,19 +93,15 @@ export default function SubscriptionsPage() {
         `);
 
       if (sendersData) {
+        // 2. Used "s.assigned_at" instead of "s.id"
         const formatted = sendersData.map((s: any) => ({
           user_id: s.user_id,
           sender_id: s.sender_id,
           sender_email: s.sender_pool?.smtp_email,
-          assigned_at: s.id
+          assigned_at: s.assigned_at // <-- This is the fix
         }));
         setSenders(formatted);
       }
-
-      toast({
-        title: 'Data Loaded',
-        description: `${usersData?.length || 0} users found`
-      });
     } catch (err: any) {
       console.error('Load error:', err);
       toast({
@@ -105,20 +118,15 @@ export default function SubscriptionsPage() {
 
     try {
       setUpgrading(true);
-
-      // Update subscription using the secure API
       await secureAPI.upgradePlanSecure(
         selectedUser.user_id,
         newPlan,
         `Plan upgraded from ${selectedUser.plan_id} to ${newPlan}`
       );
-
       toast({
         title: 'Success',
         description: `User ${selectedUser.email} plan upgraded to ${plans.find(p => p.id === newPlan)?.name}`
       });
-
-      // Reload data
       await loadData();
       setSelectedUser(null);
       setNewPlan('');
@@ -133,9 +141,52 @@ export default function SubscriptionsPage() {
     }
   };
 
+  const handleAssignEmail = async (userId: string) => {
+    setAssigningEmail(userId);
+    try {
+      const result: any = await secureAPI.assignSenderSecure(userId);
+      toast({
+        title: 'Success',
+        description: `Email ${result.sender_email} assigned to user.`
+      });
+      await loadData(); 
+    } catch (err: any) {
+      console.error('Email assignment error:', err);
+      toast({
+        title: 'Error Assigning Email',
+        description: err.message,
+      });
+    } finally {
+      setAssigningEmail(null);
+    }
+  };
+  
+  const handleApplyPromo = async () => {
+    if (!selectedUser || !promoCode) return;
+
+    setApplyingPromo(true);
+    try {
+      const result: any = await secureAPI.applyPromotionSecure(selectedUser.user_id, promoCode);
+      toast({
+        title: 'Promotion Applied',
+        description: `Code ${result.promo_code} applied to user.`
+      });
+      await loadData(); 
+      setPromoCode(''); 
+    } catch (err: any) {
+      console.error('Promo apply error:', err);
+      toast({
+        title: 'Error Applying Promotion',
+        description: err.message,
+      });
+    } finally {
+      setApplyingPromo(false);
+    }
+  };
+
   const getSenderEmail = (userId: string) => {
     const sender = senders.find(s => s.user_id === userId);
-    return sender?.sender_email || 'Not assigned';
+    return sender?.sender_email || null; 
   };
 
   if (loading) {
@@ -153,9 +204,8 @@ export default function SubscriptionsPage() {
         <p className="text-gray-600 mt-2">Manage user subscriptions, plans, and email assignments</p>
       </div>
 
-      {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
+         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium">Total Users</CardTitle>
           </CardHeader>
@@ -163,7 +213,6 @@ export default function SubscriptionsPage() {
             <div className="text-2xl font-bold">{users.length}</div>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium">Active Trials</CardTitle>
@@ -172,19 +221,17 @@ export default function SubscriptionsPage() {
             <div className="text-2xl font-bold">{users.filter(u => u.status === 'trialing').length}</div>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Active Plans</CardTitle>
+            <CardTitle className="text-sm font-medium">Active Plans (Paid)</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{users.filter(u => u.status === 'active').length}</div>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Emails in Pool</CardTitle>
+            <CardTitle className="text-sm font-medium">Emails Assigned</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{senders.length}</div>
@@ -192,7 +239,6 @@ export default function SubscriptionsPage() {
         </Card>
       </div>
 
-      {/* Users Table with Management */}
       <Card>
         <CardHeader>
           <CardTitle>Users & Subscriptions</CardTitle>
@@ -207,8 +253,7 @@ export default function SubscriptionsPage() {
                   <TableHead>Current Plan</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Trial Ends</TableHead>
-                  <TableHead>Email Pool</TableHead>
-                  <TableHead>Device</TableHead>
+                  <TableHead>Subscription Ends</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -217,9 +262,13 @@ export default function SubscriptionsPage() {
                   <TableRow key={user.user_id}>
                     <TableCell className="font-medium">{user.email}</TableCell>
                     <TableCell>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-                        {user.plan_name}
-                      </span>
+                      {user.status === 'trialing' ? (
+                          <span className="text-muted-foreground italic">N/A (Trial)</span>
+                        ) : (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                          {user.plan_name || 'N/A'}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium ${
@@ -230,21 +279,23 @@ export default function SubscriptionsPage() {
                         {user.status}
                       </span>
                     </TableCell>
-                    <TableCell>{new Date(user.trial_ends_at).toLocaleDateString()}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1 text-sm">
-                        <Mail className="w-4 h-4" />
-                        {getSenderEmail(user.user_id)}
-                      </div>
+                      {user.trial_ends_at ? new Date(user.trial_ends_at).toLocaleDateString() : '—'}
                     </TableCell>
-                    <TableCell className="text-xs font-mono">{user.device_hash?.slice(0, 12)}...</TableCell>
+                    <TableCell>
+                      {user.subscription_ends_at ? new Date(user.subscription_ends_at).toLocaleDateString() : '—'}
+                    </TableCell>
                     <TableCell>
                       <Dialog>
                         <DialogTrigger asChild>
                           <Button 
                             variant="outline" 
                             size="sm"
-                            onClick={() => setSelectedUser(user)}
+                            onClick={() => {
+                              setSelectedUser(user);
+                              setNewPlan(user.plan_id); 
+                              setPromoCode(''); 
+                            }}
                           >
                             <Edit2 className="w-4 h-4 mr-1" />
                             Manage
@@ -252,14 +303,14 @@ export default function SubscriptionsPage() {
                         </DialogTrigger>
                         <DialogContent>
                           <DialogHeader>
-                            <DialogTitle>Upgrade Plan for {user.email}</DialogTitle>
+                            <DialogTitle>Manage {user.email}</DialogTitle>
                             <DialogDescription>
-                              Current plan: <strong>{user.plan_name}</strong>
+                              Current status: <strong>{user.status}</strong>
                             </DialogDescription>
                           </DialogHeader>
                           <div className="space-y-4">
                             <div>
-                              <Label>Select New Plan</Label>
+                              <Label>Upgrade Plan</Label>
                               <Select value={newPlan} onValueChange={setNewPlan}>
                                 <SelectTrigger>
                                   <SelectValue placeholder="Choose a plan" />
@@ -273,29 +324,41 @@ export default function SubscriptionsPage() {
                                 </SelectContent>
                               </Select>
                             </div>
+                            <Button 
+                              onClick={handleUpgradePlan}
+                              disabled={upgrading || !newPlan || (newPlan === user.plan_id && user.status === 'active')}
+                              className="w-full"
+                            >
+                              {upgrading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                              {user.status === 'trialing' ? 'Activate Plan' : (newPlan === user.plan_id ? 'Already on this Plan' : 'Change Plan')}
+                            </Button>
 
-                            {newPlan && (
-                              <div className="bg-blue-50 p-4 rounded-lg">
-                                <p className="text-sm font-medium mb-2">Plan Features:</p>
-                                <ul className="text-sm space-y-1">
-                                  {plans.find(p => p.id === newPlan)?.features.map((feature) => (
-                                    <li key={feature} className="flex items-center">
-                                      <span className="mr-2">✓</span>
-                                      {feature}
-                                    </li>
-                                  ))}
-                                </ul>
+                            <Separator className="my-4" />
+
+                            <div className="space-y-2">
+                              <Label>Apply Promotion</Label>
+                              <p className="text-sm text-muted-foreground">
+                                Manually apply a promo code (e.g., for trial days).
+                              </p>
+                              <div className="flex gap-2">
+                                <Input
+                                  placeholder="Enter promo code"
+                                  value={promoCode}
+                                  onChange={(e) => setPromoCode(e.target.value)}
+                                  disabled={applyingPromo}
+                                />
+                                <Button
+                                  variant="secondary"
+                                  onClick={handleApplyPromo}
+                                  disabled={applyingPromo || !promoCode}
+                                >
+                                  {applyingPromo ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Ticket className="w-4 h-4" />
+                                  )}
+                                </Button>
                               </div>
-                            )}
-
-                            <div className="flex gap-2">
-                              <Button 
-                                onClick={handleUpgradePlan}
-                                disabled={upgrading || !newPlan}
-                              >
-                                {upgrading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                                Update Plan
-                              </Button>
                             </div>
                           </div>
                         </DialogContent>
@@ -309,11 +372,10 @@ export default function SubscriptionsPage() {
         </CardContent>
       </Card>
 
-      {/* Email Pool Assignments */}
       <Card>
         <CardHeader>
           <CardTitle>Email Pool Assignments</CardTitle>
-          <CardDescription>View which email is assigned to each user</CardDescription>
+          <CardDescription>View and assign an email from the pool to a user</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -323,21 +385,45 @@ export default function SubscriptionsPage() {
                   <TableHead>User Email</TableHead>
                   <TableHead>SMTP Email</TableHead>
                   <TableHead>Assigned At</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {users.map((user) => {
                   const sender = senders.find(s => s.user_id === user.user_id);
+                  const isLoading = assigningEmail === user.user_id;
+                  
                   return (
                     <TableRow key={user.user_id}>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Mail className="w-4 h-4" />
-                          {sender?.sender_email || 'Not assigned'}
+                          {sender?.sender_email || (
+                            <span className="text-muted-foreground italic">Not assigned</span>
+                          )}
                         </div>
                       </TableCell>
-                      <TableCell>{sender ? new Date(sender.assigned_at).toLocaleString() : '-'}</TableCell>
+                      {/* *** BUG FIX IS HERE *** */}
+                      {/* This will now show the correct date */}
+                      <TableCell>{sender ? new Date(sender.assigned_at).toLocaleString() : '—'}</TableCell>
+                      <TableCell className="text-right">
+                        {!sender && (
+                          <Button 
+                            variant="secondary" 
+                            size="sm"
+                            onClick={() => handleAssignEmail(user.user_id)}
+                            disabled={isLoading}
+                          >
+                            {isLoading ? (
+                              <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                            ) : (
+                              <Sparkles className="w-4 h-4 mr-1" />
+                            )}
+                            Assign
+                          </Button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   );
                 })}
