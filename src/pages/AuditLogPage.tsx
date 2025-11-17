@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { secureAPI } from '@/lib/supabase';
 import { Loader2, RefreshCw, Search } from 'lucide-react';
+import { useAuthStore } from '@/store/auth-store'; // 1. Import auth store
 
 interface AuditLog {
   id: string;
@@ -23,10 +24,36 @@ export default function AuditLogPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [limit, setLimit] = useState(100);
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore(); // 2. Get auth state
 
   useEffect(() => {
-    fetchAuditLogs();
-  }, [limit]);
+    const fetchAuditLogs = async () => {
+      try {
+        setLoading(true);
+        const data = await secureAPI.getAuditLogsSecure(limit);
+        setLogs(data || []);
+      } catch (err: any) {
+        console.error('Error fetching audit logs:', err);
+        toast({
+          title: 'Error Loading Audit Logs',
+          description: err.message
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // 3. Add auth guards
+    if (isAuthLoading) {
+      setLoading(true);
+      return;
+    }
+    if (isAuthenticated) {
+      fetchAuditLogs();
+    } else {
+      setLoading(false);
+    }
+  }, [limit, isAuthenticated, isAuthLoading, toast]); // 4. Add dependencies
 
   const fetchAuditLogs = async () => {
     try {

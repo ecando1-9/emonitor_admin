@@ -8,9 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, Plus, Mail, Copy, Check } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { supabase } from '@/lib/supabase';
+import { supabase, secureAPI } from '@/lib/supabase'; // Import secureAPI
 import { useToast } from '@/hooks/use-toast';
-// 1. IMPORT YOUR AUTH STORE
 import { useAuthStore } from '@/store/auth-store';
 
 interface EmailEntry {
@@ -30,8 +29,7 @@ export default function EmailPoolPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const { toast } = useToast();
   
-  // 2. GET THE ADMIN OBJECT FROM THE STORE
-  const { admin } = useAuthStore();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore(); // Get auth state
 
   const [formData, setFormData] = useState({
     email: '',
@@ -41,13 +39,18 @@ export default function EmailPoolPage() {
     password: ''
   });
 
-  // 3. ADD 'admin' TO THE DEPENDENCY ARRAY
   useEffect(() => {
-    // 4. ADD A GUARD CLAUSE TO WAIT FOR AUTH
-    if (admin) {
-      loadEmails();
+    // Auth guard
+    if (isAuthLoading) {
+      setLoading(true);
+      return;
     }
-  }, [admin]); // This useEffect will now re-run when 'admin' changes from null to a user
+    if (isAuthenticated) {
+      loadEmails();
+    } else {
+      setLoading(false);
+    }
+  }, [isAuthenticated, isAuthLoading]); // Dependency on auth state
 
   const loadEmails = async () => {
     try {
@@ -59,11 +62,10 @@ export default function EmailPoolPage() {
 
       if (error) {
         console.warn('Error loading emails:', error);
-        // Table might not exist yet or no access
         setEmails([]);
         return;
       }
-      // Map the data to match EmailEntry interface
+      
       const mappedData = (data || []).map((item: any) => ({
         id: item.id,
         email: item.smtp_email,
@@ -82,25 +84,22 @@ export default function EmailPoolPage() {
     }
   };
 
+  // *** THIS FUNCTION IS NOW FIXED ***
   const handleAddEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.email || !formData.username) {
+    if (!formData.email || !formData.username || !formData.password) {
       toast({ title: 'Error', description: 'Please fill in all fields' });
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from('sender_pool')
-        .insert({
-          smtp_email: formData.email,
-          smtp_server: formData.smtp_server,
-          smtp_port: formData.smtp_port,
-          smtp_password: formData.password,
-          is_active: true
-        });
-
-      if (error) throw error;
+      // Use the secure RPC function instead of a direct insert
+      await secureAPI.add_sender_secure(
+        formData.email,
+        formData.smtp_server,
+        formData.smtp_port,
+        formData.password
+      );
 
       toast({
         title: 'Success',
@@ -118,7 +117,7 @@ export default function EmailPoolPage() {
       loadEmails();
     } catch (error: any) {
       toast({
-        title: 'Error',
+        title: 'Error Adding Email',
         description: error.message
       });
     }

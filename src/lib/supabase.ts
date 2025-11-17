@@ -79,6 +79,8 @@ export interface AuditLog {
 export const secureAPI = {
   // === AUTH & ADMIN ===
   
+  // **** THIS FUNCTION IS NOW FIXED ****
+  // It now calls an RPC function to avoid the infinite RLS loop.
   async getCurrentAdmin() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -87,14 +89,16 @@ export const secureAPI = {
     }
 
     console.log('[Admin] Checking admin role for user:', user.id);
-    const { data: role, error } = await supabase
-      .from('admin_roles')
-      .select('role, is_active')
-      .eq('user_id', user.id)
-      .single();
+    
+    // This is the fix:
+    // We call the 'get_admin_role' RPC function, which is SECURITY DEFINER
+    // and can safely read the admin_roles table without hitting RLS.
+    const { data: adminRole, error } = await supabase.rpc('get_admin_role', {
+      user_uuid: user.id
+    });
 
     if (error) {
-      console.error('[Admin] Error fetching admin role:', {
+      console.error('[Admin] Error fetching admin role via RPC:', {
         message: error.message,
         details: (error as any).details,
         hint: (error as any).hint,
@@ -103,13 +107,15 @@ export const secureAPI = {
       return null;
     }
 
-    if (!role) {
+    if (!adminRole) {
       console.warn('[Admin] No admin role found for user:', user.id);
       return null;
     }
 
-    console.log('[Admin] Admin role found:', role);
-    return role ? { ...user, adminRole: role.role, isActive: role.is_active } : null;
+    console.log('[Admin] Admin role found:', adminRole);
+    // The RPC function only returns the role, so we assume 'is_active' is true
+    // because the function only returns active roles.
+    return { ...user, adminRole: adminRole, isActive: true };
   },
 
   // === SUBSCRIPTIONS & TRIALS ===
@@ -267,7 +273,13 @@ export const secureAPI = {
     if (error) throw error;
     return data;
   },
-
+// START: ADD THIS NEW FUNCTION
+  async getPlanAnalytics() {
+    const { data, error } = await supabase.rpc('get_plan_analytics');
+    if (error) throw error;
+    return data;
+  },
+  // END: ADD THIS NEW FUNCTION
   async getPlanById(planId: string) {
     const { data, error } = await supabase
       .from('plans')
@@ -287,9 +299,68 @@ export const secureAPI = {
     if (error) throw error;
     return data;
   },
+  // START: ADD THIS NEW FUNCTION
+  async add_sender_secure(
+    email: string,
+    server: string,
+    port: number,
+    password: string
+  ) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
 
+    const { data, error } = await supabase.rpc('add_sender_secure', {
+      smtp_email_addr: email,
+      smtp_server: server,
+      smtp_port_num: port,
+      smtp_password_val: password,
+      admin_id: user.id
+    });
+    if (error) throw error;
+    return data;
+  },
+  // END: ADD THIS NEW FUNCTION
+  // START: ADD THIS NEW FUNCTION
+  async assignSenderSecure(userId: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase.rpc('assign_sender_secure', {
+      target_user_id: userId,
+      admin_id: user.id
+    });
+    if (error) throw error;
+    return data;
+  },
+  // END: ADD THIS NEW FUNCTION
+async applyPromotionSecure(userId: string, promoCode: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase.rpc('apply_promotion_secure', {
+      target_user_id: userId,
+      promo_code: promoCode,
+      admin_id: user.id
+    });
+    if (error) throw error;
+    return data;
+  },
   // === ADMIN ROLES ===
+// START: ADD THIS NEW FUNCTION
+  async adminSetUserStatusSecure(userId: string, newStatus: string, justification: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
 
+    const { data, error } = await supabase.rpc('admin_set_user_status_secure', {
+      target_user_id: userId,
+      new_status: newStatus,
+      justification: justification,
+      admin_id: user.id
+    });
+    if (error) throw error;
+    return data;
+  },
+  // END: ADD THIS NEW FUNCTION
   async createAdminRole(userId: string, role: 'SuperAdmin' | 'SupportAdmin' | 'ReadOnly') {
     const { data, error } = await supabase
       .from('admin_roles')

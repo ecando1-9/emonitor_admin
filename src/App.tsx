@@ -23,7 +23,7 @@ function AppLayout() {
 
   useEffect(() => {
     checkSession();
-  }, [checkSession]);
+  }, []); // <-- **** THIS IS THE FIX ****
 
   useEffect(() => {
     if (isLoading) return;

@@ -2,84 +2,72 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Zap, Users, TrendingUp } from 'lucide-react';
+import { AlertCircle, Zap, Users, TrendingUp, Loader2, Ticket } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { secureAPI } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthStore } from '@/store/auth-store';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Separator } from '@/components/ui/separator';
 
-interface Plan {
-  id: string;
-  name: string;
-  price: number;
-  price_original?: number;
-  features: string[];
-}
-
-interface PlanStats {
+// This new interface matches the output of our get_plan_analytics() function
+interface PlanAnalytics {
   plan_id: string;
   plan_name: string;
+  price: number;
+  features: string[];
   subscriber_count: number;
-  revenue_monthly: number;
-  revenue_annual: number;
+  trialing_count: number;
+  active_count: number;
+  estimated_monthly_revenue: number;
+  promotions_used: Array<{
+    code: string;
+    type: string;
+    value: number;
+  }>;
 }
 
 export default function PlansPage() {
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [stats, setStats] = useState<PlanStats[]>([]);
+  const [analytics, setAnalytics] = useState<PlanAnalytics[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
 
   useEffect(() => {
-    loadPlans();
-  }, []);
+    if (isAuthLoading) { setLoading(true); return; }
+    if (isAuthenticated) {
+      loadPlanAnalytics();
+    } else {
+      setLoading(false);
+    }
+  }, [isAuthenticated, isAuthLoading]);
 
-  const loadPlans = async () => {
+  const loadPlanAnalytics = async () => {
     try {
       setLoading(true);
-      const plans = await secureAPI.getPlans();
-      setPlans(plans || []);
-
-      // Calculate stats from subscriptions
-      const users = await secureAPI.getUsersWithSubscriptions();
-      const statsMap = new Map<string, PlanStats>();
-
-      users?.forEach(user => {
-        const stat = statsMap.get(user.plan_id) || {
-          plan_id: user.plan_id,
-          plan_name: user.plan_name || 'Unknown',
-          subscriber_count: 0,
-          revenue_monthly: 0,
-          revenue_annual: 0
-        };
-        stat.subscriber_count += 1;
-        stat.revenue_monthly += user.price || 0;
-        stat.revenue_annual += (user.price || 0) * 12;
-        statsMap.set(user.plan_id, stat);
-      });
-
-      setStats(Array.from(statsMap.values()));
+      const data = await secureAPI.getPlanAnalytics();
+      setAnalytics(data || []);
     } catch (error: any) {
       toast({
         title: 'Error',
-        description: 'Failed to load plans'
+        description: 'Failed to load plan analytics: ' + error.message
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const getStat = (planId: string) => {
-    return stats.find(s => s.plan_id === planId) || {
-      plan_id: planId,
-      plan_name: '',
-      subscriber_count: 0,
-      revenue_monthly: 0,
-      revenue_annual: 0
-    };
-  };
+  const totalSubscribers = analytics.reduce((sum, s) => sum + s.subscriber_count, 0);
+  const totalRevenue = analytics.reduce((sum, s) => sum + s.estimated_monthly_revenue, 0);
 
-  const totalSubscribers = stats.reduce((sum, s) => sum + s.subscriber_count, 0);
-  const totalRevenue = stats.reduce((sum, s) => sum + s.revenue_monthly, 0);
+  // Helper to count promo code uses
+  const getPromoCounts = (promos: Array<{code: string}>) => {
+    const counts = new Map<string, number>();
+    for (const promo of promos) {
+      counts.set(promo.code, (counts.get(promo.code) || 0) + 1);
+    }
+    return Array.from(counts.entries());
+  };
 
   return (
     <div className="space-y-6">
@@ -104,7 +92,7 @@ export default function PlansPage() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Monthly Revenue</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Est. Monthly Revenue</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-end gap-2">
@@ -116,91 +104,147 @@ export default function PlansPage() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Annual Revenue (Est.)</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Active Trials</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">${(totalRevenue * 12).toFixed(2)}</div>
+            <div className="text-3xl font-bold">
+              {analytics.reduce((sum, s) => sum + s.trialing_count, 0)}
+            </div>
           </CardContent>
         </Card>
       </div>
 
       {loading ? (
-        <div className="text-center py-8">Loading...</div>
-      ) : plans.length === 0 ? (
+        <div className="text-center py-8">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto" />
+        </div>
+      ) : analytics.length === 0 ? (
         <Alert>
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>No plans found</AlertDescription>
+          <AlertDescription>No plans found in the database.</AlertDescription>
         </Alert>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {plans.map((plan) => {
-            const stat = getStat(plan.id);
-            const isPopular = plan.name === 'Standard';
+          {analytics.map((plan) => {
+            const isPopular = plan.plan_name === 'Standard Plan';
+            const promoCounts = getPromoCounts(plan.promotions_used);
 
             return (
-              <Card key={plan.id} className={`flex flex-col ${isPopular ? 'border-blue-500 border-2 ring-2 ring-blue-100' : ''}`}>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
+              <Dialog key={plan.plan_id}>
+                <Card className={`flex flex-col ${isPopular ? 'border-blue-500 border-2 ring-2 ring-blue-100' : ''}`}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-2xl">{plan.plan_name}</CardTitle>
+                        {isPopular && (
+                          <Badge className="mt-2 bg-blue-500">Most Popular</Badge>
+                        )}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="flex-1 space-y-4">
+                    {/* Pricing */}
                     <div>
-                      <CardTitle className="text-2xl">{plan.name}</CardTitle>
-                      {isPopular && (
-                        <Badge className="mt-2 bg-blue-500">Most Popular</Badge>
-                      )}
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-3xl font-bold">${plan.price}</span>
+                        <span className="text-muted-foreground">/month</span>
+                      </div>
                     </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="flex-1 space-y-4">
-                  {/* Pricing */}
-                  <div>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-bold">${plan.price}</span>
-                      <span className="text-muted-foreground">/month</span>
+
+                    {/* Stats */}
+                    <div className="space-y-2 py-4 border-y">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Total Subscribers</span>
+                        <Badge variant="secondary">{plan.subscriber_count}</Badge>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Active (Paid)</span>
+                        <span className="font-bold">{plan.active_count}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Trialing</span>
+                        <span className="font-bold">{plan.trialing_count}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Est. Monthly Revenue</span>
+                        <span className="font-bold text-green-600">${plan.estimated_monthly_revenue.toFixed(2)}</span>
+                      </div>
                     </div>
-                    {plan.price_original && plan.price_original > plan.price && (
-                      <p className="text-sm text-muted-foreground">
-                        <span className="line-through">
-                          ${plan.price_original}
-                        </span>
-                        <span className="ml-2 text-green-600 font-medium">
-                          Save {Math.round((1 - plan.price / plan.price_original) * 100)}%
-                        </span>
-                      </p>
+
+                    {/* Features */}
+                    <div className="space-y-2">
+                      <p className="font-medium text-sm">Features:</p>
+                      <ul className="space-y-2">
+                        {plan.features.map((feature, idx) => (
+                          <li key={idx} className="text-sm flex items-start gap-2">
+                            <Zap className="h-4 w-4 text-yellow-500 mt-0.5 flex-shrink-0" />
+                            <span>{feature}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </CardContent>
+                  <DialogTrigger asChild>
+                    <Button className="w-full mt-4" variant={isPopular ? 'default' : 'outline'}>
+                      View Details
+                    </Button>
+                  </DialogTrigger>
+                </Card>
+                
+                {/* View Details Dialog Content */}
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>{plan.plan_name} - Analytics</DialogTitle>
+                    <DialogDescription>
+                      Detailed breakdown of subscribers and promotions for this plan.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <Separator />
+                    <CardTitle className="text-lg">Subscriber Stats</CardTitle>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Total Subscribers:</span>
+                      <span className="font-bold text-lg">{plan.subscriber_count}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Active (Paid):</span>
+                      <span className="font-bold text-green-600">{plan.active_count}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Trialing:</span>
+                      <span className="font-bold text-yellow-600">{plan.trialing_count}</span>
+                    </div>
+                    
+                    <Separator />
+                    <CardTitle className="text-lg">Revenue</CardTitle>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Est. Monthly Revenue:</span>
+                      <span className="font-bold text-lg text-green-600">${plan.estimated_monthly_revenue.toFixed(2)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Note: Revenue is estimated from active subscriptions and does not yet account for monetary discounts.
+                    </p>
+
+                    <Separator />
+                    <CardTitle className="text-lg">Promotions Used</CardTitle>
+                    {promoCounts.length > 0 ? (
+                      <div className="space-y-2">
+                        {promoCounts.map(([code, count]) => (
+                          <div key={code} className="flex justify-between items-center">
+                            <Badge variant="secondary" className="gap-1">
+                              <Ticket className="h-3 w-3" />
+                              {code}
+                            </Badge>
+                            <span className="text-sm">{count} uses</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No promotions have been applied to this plan yet.</p>
                     )}
                   </div>
-
-                  {/* Stats */}
-                  <div className="space-y-2 py-4 border-y">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Subscribers</span>
-                      <Badge variant="secondary">{stat.subscriber_count}</Badge>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Monthly Revenue</span>
-                      <span className="font-bold">${stat.revenue_monthly.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Annual Revenue</span>
-                      <span className="font-bold text-green-600">${stat.revenue_annual.toFixed(2)}</span>
-                    </div>
-                  </div>
-
-                  {/* Features */}
-                  <div className="space-y-2">
-                    <p className="font-medium text-sm">Features:</p>
-                    <ul className="space-y-2">
-                      {plan.features.map((feature, idx) => (
-                        <li key={idx} className="text-sm flex items-start gap-2">
-                          <Zap className="h-4 w-4 text-yellow-500 mt-0.5 flex-shrink-0" />
-                          <span>{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </CardContent>
-                <Button className="w-full mt-4" variant={isPopular ? 'default' : 'outline'}>
-                  View Details
-                </Button>
-              </Card>
+                </DialogContent>
+              </Dialog>
             );
           })}
         </div>

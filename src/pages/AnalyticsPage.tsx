@@ -4,7 +4,9 @@ import { Badge } from '@/components/ui/badge';
 import { TrendingUp, TrendingDown, Users, Zap, Smartphone, CreditCard } from 'lucide-react';
 import { secureAPI } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthStore } from '@/store/auth-store'; // 1. Import auth store
 
+// 2. Add the missing interface
 interface Analytics {
   totalUsers: number;
   activeTrials: number;
@@ -20,50 +22,60 @@ export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore(); // 3. Get auth state
 
   useEffect(() => {
-    loadAnalytics();
-  }, []);
+    const loadAnalytics = async () => {
+      try {
+        setLoading(true);
 
-  const loadAnalytics = async () => {
-    try {
-      setLoading(true);
+        // Fetch all data
+        const users = await secureAPI.getUsersWithSubscriptions();
+        const devices = await secureAPI.getActiveDevices();
 
-      // Fetch all data
-      const users = await secureAPI.getUsersWithSubscriptions();
-      const devices = await secureAPI.getActiveDevices();
+        if (!users) {
+          toast({ title: 'Error', description: 'Failed to load analytics' });
+          return;
+        }
 
-      if (!users) {
-        toast({ title: 'Error', description: 'Failed to load analytics' });
-        return;
+        const activeTrials = users.filter((u: any) => u.status === 'trialing').length;
+        const activeSubscriptions = users.filter((u: any) => u.status === 'active').length;
+        const blockedDevices = devices?.filter((d: any) => d.is_blocked).length || 0;
+
+        // Calculate metrics
+        const conversionRate = users.length > 0 ? Math.round((activeSubscriptions / (activeTrials + activeSubscriptions)) * 100) : 0;
+
+        setAnalytics({
+          totalUsers: users.length,
+          activeTrials,
+          activeSubscriptions,
+          totalDevices: devices?.length || 0,
+          blockedDevices,
+          monthlyGrowth: 12.5, // Mock data
+          trialConversionRate: conversionRate,
+          averageSessionDuration: 1247 // seconds
+        });
+      } catch (error: any) {
+        toast({
+          title: 'Error',
+          description: 'Failed to load analytics'
+        });
+      } finally {
+        setLoading(false);
       }
+    };
 
-      const activeTrials = users.filter((u: any) => u.status === 'trialing').length;
-      const activeSubscriptions = users.filter((u: any) => u.status === 'active').length;
-      const blockedDevices = devices?.filter((d: any) => d.is_blocked).length || 0;
-
-      // Calculate metrics
-      const conversionRate = users.length > 0 ? Math.round((activeSubscriptions / (activeTrials + activeSubscriptions)) * 100) : 0;
-
-      setAnalytics({
-        totalUsers: users.length,
-        activeTrials,
-        activeSubscriptions,
-        totalDevices: devices?.length || 0,
-        blockedDevices,
-        monthlyGrowth: 12.5, // Mock data
-        trialConversionRate: conversionRate,
-        averageSessionDuration: 1247 // seconds
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: 'Failed to load analytics'
-      });
-    } finally {
+    // 4. Add auth guards
+    if (isAuthLoading) {
+      setLoading(true);
+      return;
+    }
+    if (isAuthenticated) {
+      loadAnalytics();
+    } else {
       setLoading(false);
     }
-  };
+  }, [isAuthenticated, isAuthLoading, toast]); // 5. Add dependencies
 
   if (loading) {
     return (
@@ -276,6 +288,7 @@ export default function AnalyticsPage() {
                   <p className="font-medium">Device Health</p>
                   <p className="text-sm text-muted-foreground">Overall status</p>
                 </div>
+                {/* This is the corrected line */}
                 <Badge className="bg-green-600">
                   {analytics.blockedDevices === 0 ? 'Good' : 'Warning'}
                 </Badge>

@@ -10,6 +10,7 @@ import { AlertCircle, Plus, Trash2, Shield, Lock } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthStore } from '@/store/auth-store'; // 1. Import auth store
 
 interface BlockedIP {
   id: string;
@@ -23,6 +24,7 @@ export default function SecurityPage() {
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const { toast } = useToast();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore(); // 2. Get auth state
 
   const [formData, setFormData] = useState({
     ip_address: '',
@@ -30,8 +32,17 @@ export default function SecurityPage() {
   });
 
   useEffect(() => {
-    loadBlockedIPs();
-  }, []);
+    // 3. Add auth guards
+    if (isAuthLoading) {
+      setLoading(true);
+      return;
+    }
+    if (isAuthenticated) {
+      loadBlockedIPs();
+    } else {
+      setLoading(false);
+    }
+  }, [isAuthenticated, isAuthLoading]); // 4. Add dependencies
 
   const loadBlockedIPs = async () => {
     try {

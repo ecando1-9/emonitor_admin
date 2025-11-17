@@ -7,7 +7,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { secureAPI } from '@/lib/supabase';
-import { Loader2, User, Mail, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, User, Mail, CheckCircle, XCircle, Edit } from 'lucide-react';
+import { useAuthStore } from '@/store/auth-store';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 
 interface User {
   user_id: string;
@@ -15,32 +18,48 @@ interface User {
   plan_id: string;
   plan_name: string;
   status: string;
-  trial_ends_at: string;
+  trial_ends_at: string | null;
+  subscription_ends_at: string | null; 
+  created_at: string; 
   device_hash: string;
   trial_count: number;
 }
 
 export default function UsersPage() {
   const { toast } = useToast();
+  const { canDelete, isAuthenticated, isLoading: isAuthLoading } = useAuthStore(); 
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [extendingTrial, setExtendingTrial] = useState<string | null>(null);
+  
+  const [isTrialDialogOpen, setIsTrialDialogOpen] = useState(false);
+  const [extendingTrial, setExtendingTrial] = useState(false);
   const [daysToAdd, setDaysToAdd] = useState(30);
 
+  const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
+  const [settingStatus, setSettingStatus] = useState(false);
+  const [newStatus, setNewStatus] = useState('');
+  const [justification, setJustification] = useState('');
+
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+
   useEffect(() => {
-    loadUsers();
-  }, []);
+    if (isAuthLoading) {
+      setLoading(true);
+      return;
+    }
+    if (isAuthenticated) {
+      loadUsers();
+    } else {
+      setLoading(false);
+    }
+  }, [isAuthenticated, isAuthLoading]); 
 
   const loadUsers = async () => {
     try {
       setLoading(true);
       const data = await secureAPI.getUsersWithSubscriptions();
       setUsers(data || []);
-      toast({
-        title: 'Users Loaded',
-        description: `${data?.length || 0} users found`
-      });
     } catch (err: any) {
       console.error('Error loading users:', err);
       toast({
@@ -52,23 +71,22 @@ export default function UsersPage() {
     }
   };
 
-  const handleExtendTrial = async (userId: string) => {
+  const handleExtendTrial = async () => {
+    if (!selectedUser) return;
     try {
-      setExtendingTrial(userId);
-      const result = await secureAPI.extendTrialSecure(
-        userId,
+      setExtendingTrial(true);
+      await secureAPI.extendTrialSecure(
+        selectedUser.user_id,
         daysToAdd,
         `Admin extended trial by ${daysToAdd} days`
       );
-
-      if (result) {
-        toast({
-          title: 'Trial Extended',
-          description: `Trial extended by ${daysToAdd} days`
-        });
-        await loadUsers();
-        setDaysToAdd(30);
-      }
+      toast({
+        title: 'Trial Extended',
+        description: `Trial extended by ${daysToAdd} days`
+      });
+      await loadUsers();
+      setIsTrialDialogOpen(false);
+      setSelectedUser(null);
     } catch (err: any) {
       console.error('Error extending trial:', err);
       toast({
@@ -76,13 +94,41 @@ export default function UsersPage() {
         description: err.message
       });
     } finally {
-      setExtendingTrial(null);
+      setExtendingTrial(false);
+    }
+  };
+
+  const handleSetUserStatus = async () => {
+    if (!selectedUser || !newStatus || !justification) {
+      toast({ title: 'Error', description: 'Please select a status and provide a justification.' });
+      return;
+    }
+    try {
+      setSettingStatus(true);
+      await secureAPI.adminSetUserStatusSecure(selectedUser.user_id, newStatus, justification);
+      toast({
+        title: 'Status Updated',
+        description: `User status set to ${newStatus}`
+      });
+      await loadUsers();
+      setIsStatusDialogOpen(false);
+      setSelectedUser(null);
+      setNewStatus('');
+      setJustification('');
+    } catch (err: any) {
+      console.error('Error setting status:', err);
+      toast({
+        title: 'Error Setting Status',
+        description: err.message
+      });
+    } finally {
+      setSettingStatus(false);
     }
   };
 
   const filteredUsers = users.filter(user =>
     user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.plan_name.toLowerCase().includes(searchTerm.toLowerCase())
+    (user.plan_name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const statusColor = (status: string) => {
@@ -100,6 +146,17 @@ export default function UsersPage() {
     }
   };
 
+  // Helper to format the correct end date
+  const getEndDate = (user: User) => {
+    if (user.status === 'trialing' && user.trial_ends_at) {
+      return `(Trial) ${new Date(user.trial_ends_at).toLocaleDateString()}`;
+    }
+    if (user.status === 'active' && user.subscription_ends_at) {
+      return `(Paid) ${new Date(user.subscription_ends_at).toLocaleDateString()}`;
+    }
+    return '—'; // No end date for expired, suspended, etc.
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -112,40 +169,9 @@ export default function UsersPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Users Management</h1>
-        <p className="text-gray-600 mt-2">View and manage all users</p>
+        <p className="text-gray-600 mt-2">View and manage all users and their status</p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Total Users</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{users.length}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Active Trials</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{users.filter(u => u.status === 'trialing').length}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Active Subscriptions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{users.filter(u => u.status === 'active').length}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Search */}
       <Card>
         <CardHeader>
           <CardTitle>Search Users</CardTitle>
@@ -160,7 +186,6 @@ export default function UsersPage() {
         </CardContent>
       </Card>
 
-      {/* Users Table */}
       <Card>
         <CardHeader>
           <CardTitle>All Users</CardTitle>
@@ -174,8 +199,8 @@ export default function UsersPage() {
                   <TableHead>Email</TableHead>
                   <TableHead>Plan</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Trial Ends</TableHead>
-                  <TableHead>Device</TableHead>
+                  <TableHead>Start Date</TableHead>
+                  <TableHead>End Date</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -193,50 +218,43 @@ export default function UsersPage() {
                         <Mail className="w-4 h-4" />
                         {user.email}
                       </TableCell>
-                      <TableCell>{user.plan_name}</TableCell>
+                      {/* *** LOGIC FIX HERE *** */}
+                      <TableCell>
+                        {user.status === 'trialing' ? (
+                          <span className="text-muted-foreground italic">N/A (Trial)</span>
+                        ) : (
+                          user.plan_name || 'N/A'
+                        )}
+                      </TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColor(user.status)}`}>
                           {user.status}
                         </span>
                       </TableCell>
-                      <TableCell>{new Date(user.trial_ends_at).toLocaleDateString()}</TableCell>
-                      <TableCell className="text-xs font-mono truncate max-w-xs">{user.device_hash?.slice(0, 16)}...</TableCell>
+                      <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
+                      {/* *** LOGIC FIX HERE *** */}
+                      <TableCell>{getEndDate(user)}</TableCell>
                       <TableCell>
-                        {user.status === 'trialing' && (
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button variant="outline" size="sm">
-                                Extend Trial
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Extend Trial for {user.email}</DialogTitle>
-                              </DialogHeader>
-                              <div className="space-y-4">
-                                <div>
-                                  <Label>Days to Add</Label>
-                                  <Input
-                                    type="number"
-                                    min="1"
-                                    max="365"
-                                    value={daysToAdd}
-                                    onChange={(e) => setDaysToAdd(parseInt(e.target.value))}
-                                  />
-                                </div>
-                                <Button
-                                  onClick={() => handleExtendTrial(user.user_id)}
-                                  disabled={extendingTrial === user.user_id}
-                                >
-                                  {extendingTrial === user.user_id ? (
-                                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                                  ) : null}
-                                  Extend Trial
-                                </Button>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
-                        )}
+                        <div className="flex gap-2">
+                          {user.status === 'trialing' && (
+                            <Button variant="outline" size="sm" onClick={() => {
+                              setSelectedUser(user);
+                              setIsTrialDialogOpen(true);
+                            }}>
+                              Extend Trial
+                            </Button>
+                          )}
+                          {canDelete() && ( 
+                            <Button variant="secondary" size="sm" onClick={() => {
+                              setSelectedUser(user);
+                              setNewStatus(user.status);
+                              setIsStatusDialogOpen(true);
+                            }}>
+                              <Edit className="w-4 h-4 mr-1" />
+                              Set Status
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -246,6 +264,80 @@ export default function UsersPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Extend Trial Dialog */}
+      <Dialog open={isTrialDialogOpen} onOpenChange={setIsTrialDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Extend Trial for {selectedUser?.email}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Days to Add</Label>
+              <Input
+                type="number"
+                min="1"
+                max="365"
+                value={daysToAdd}
+                onChange={(e) => setDaysToAdd(parseInt(e.target.value))}
+              />
+            </div>
+            <Button
+              onClick={handleExtendTrial}
+              disabled={extendingTrial}
+              className="w-full"
+            >
+              {extendingTrial ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Confirm Extension
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Set Status Dialog (SuperAdmin only) */}
+      <Dialog open={isStatusDialogOpen} onOpenChange={setIsStatusDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Set Status for {selectedUser?.email}</DialogTitle>
+            <DialogDescription>
+              Warning: This is a powerful action that overrides all subscription logic.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>New Status</Label>
+              <Select value={newStatus} onValueChange={setNewStatus}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a new status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="trialing">Trialing (Resets trial to 30 days)</SelectItem>
+                  <SelectItem value="active">Active (Sets paid plan for 1 month)</SelectItem>
+                  <SelectItem value="suspended">Suspended (Blocks access)</SelectItem>
+                  <SelectItem value="expired">Expired (Blocks access)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Justification (Required)</Label>
+              <Textarea
+                placeholder="Why are you manually changing this status?"
+                value={justification}
+                onChange={(e) => setJustification(e.target.value)}
+              />
+            </div>
+            <Button
+              variant="destructive"
+              onClick={handleSetUserStatus}
+              disabled={settingStatus || !justification || !newStatus}
+              className="w-full"
+            >
+              {settingStatus ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Confirm Status Change
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

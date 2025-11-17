@@ -6,6 +6,7 @@ import { Badge } from '../components/ui/badge';
 import { AlertCircle, Users, Zap, TrendingUp, Clock, Download } from 'lucide-react';
 import { secureAPI } from '../lib/supabase';
 import { useToast } from '../hooks/use-toast';
+import { useAuthStore } from '../store/auth-store'; // 1. Import the auth store
 
 interface DashboardStats {
   totalUsers: number;
@@ -27,6 +28,7 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore(); // 2. Get auth state
 
   useEffect(() => {
     const loadDashboardData = async () => {
@@ -113,8 +115,22 @@ export default function OverviewPage() {
       }
     };
 
-    loadDashboardData();
-  }, [toast]);
+    // 3. Add guard clauses
+    if (isAuthLoading) {
+      // Don't fetch data while auth is loading
+      setLoading(true);
+      return;
+    }
+
+    if (isAuthenticated) {
+      // Only fetch data if authenticated
+      loadDashboardData();
+    } else {
+      // Not authenticated, probably being redirected to /login
+      setLoading(false);
+    }
+
+  }, [toast, isAuthenticated, isAuthLoading]); // 4. Add auth state to dependency array
 
   const handleExportData = async () => {
     try {

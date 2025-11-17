@@ -35,7 +35,8 @@ interface ActionDialogState {
 }
 
 export default function DevicesPage() {
-  const { admin, canDelete } = useAuthStore(); // canDelete maps to SuperAdmin
+  // 1. Get auth state
+  const { admin, canDelete, isAuthenticated, isLoading: isAuthLoading } = useAuthStore(); 
   const { toast } = useToast();
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,8 +48,17 @@ export default function DevicesPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetchDevices();
-  }, []);
+    // 2. Add the authentication guard
+    if (isAuthLoading) {
+      setLoading(true);
+      return;
+    }
+    if (isAuthenticated) {
+      fetchDevices();
+    } else {
+      setLoading(false); // Not logged in, so don't load
+    }
+  }, [isAuthenticated, isAuthLoading]); // 3. Add auth state to dependencies
 
   const fetchDevices = async () => {
     try {
@@ -65,7 +75,6 @@ export default function DevicesPage() {
       toast({
         title: 'Error',
         description: error.message || 'Failed to load devices',
-        // 'variant' property removed as it caused the error
       });
     } finally {
       setLoading(false);
@@ -86,7 +95,7 @@ export default function DevicesPage() {
     if (!actionDialog.device || !actionDialog.type) return;
 
     if (!justification.trim()) {
-      toast({ title: 'Error', description: 'Justification is required for all device actions' }); // 'variant' property removed
+      toast({ title: 'Error', description: 'Justification is required for all device actions' }); 
       return;
     }
 
@@ -117,7 +126,6 @@ export default function DevicesPage() {
       toast({
         title: 'Error',
         description: error.message || 'Action failed',
-        // 'variant' property removed as it caused the error
       });
     } finally {
       setSubmitting(false);
