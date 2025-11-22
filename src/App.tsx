@@ -13,6 +13,7 @@ import SecurityPage from './pages/SecurityPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import AuditLogPage from './pages/AuditLogPage';
 import SubscriptionsPage from './pages/SubscriptionsPage';
+import EmergencyAlertsPage from './pages/EmergencyAlertsPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 // AppLayout wrapper to handle auth checks and redirects
@@ -70,6 +71,7 @@ const AppRoutes = [
       { path: '/security', element: <SecurityPage /> },
       { path: '/analytics', element: <AnalyticsPage /> },
       { path: '/audit', element: <AuditLogPage /> },
+      { path: '/emergency-alerts', element: <EmergencyAlertsPage /> },
     ],
   },
   {

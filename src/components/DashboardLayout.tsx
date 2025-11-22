@@ -15,7 +15,8 @@ import {
   X,
   Bell,
   Search,
-  CreditCard
+  CreditCard,
+  AlertTriangle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,6 +55,7 @@ const navigation: NavItem[] = [
   { name: 'Security', href: '/security', icon: Shield, badge: 3 },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Audit Log', href: '/audit', icon: FileText },
+  { name: 'Emergency Alerts', href: '/emergency-alerts', icon: AlertTriangle },
 ];
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {

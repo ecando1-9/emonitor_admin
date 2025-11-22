@@ -148,6 +148,7 @@ CREATE TABLE public.blocked_ips (
 CREATE TABLE public.emergency_alerts (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   created_at timestamptz DEFAULT now(),
+  triggered_at timestamptz DEFAULT now(),
   user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   device_hash text REFERENCES public.devices(device_hash),
   last_location jsonb,
@@ -155,7 +156,24 @@ CREATE TABLE public.emergency_alerts (
   status text NOT NULL DEFAULT 'new',
   acknowledged_by uuid REFERENCES auth.users(id),
   acknowledged_at timestamptz,
-  notes text
+  notes text,
+  -- User information
+  user_phone text,
+  user_email text,
+  user_name text,
+  device_name text,
+  emergency_contacts jsonb DEFAULT '[]'::jsonb,
+  -- Email tracking
+  email_sent_to_user boolean DEFAULT false,
+  email_sent_to_admin boolean DEFAULT false,
+  email_sent_to_user_at timestamptz,
+  email_sent_to_admin_at timestamptz,
+  email_details jsonb DEFAULT '{}'::jsonb,
+  -- Notification tracking
+  users_notified_count integer DEFAULT 0,
+  emergency_contacts_notified_count integer DEFAULT 0,
+  emergency_contacts_notified jsonb DEFAULT '[]'::jsonb,
+  admins_notified jsonb DEFAULT '[]'::jsonb
 );
 
 -- ========================================
@@ -629,3 +647,7 @@ CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON public.devices(last_seen DES
 CREATE INDEX IF NOT EXISTS idx_admin_roles_user_id ON public.admin_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON public.audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_emergency_alerts_triggered_at ON public.emergency_alerts(triggered_at DESC);
+CREATE INDEX IF NOT EXISTS idx_emergency_alerts_email_sent ON public.emergency_alerts(email_sent_to_user, email_sent_to_admin);
+CREATE INDEX IF NOT EXISTS idx_emergency_alerts_user_id ON public.emergency_alerts(user_id);
+CREATE INDEX IF NOT EXISTS idx_emergency_alerts_status ON public.emergency_alerts(status);
