@@ -6,9 +6,9 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Plus, Mail, Copy, Check } from 'lucide-react';
+import { AlertCircle, Plus, Mail, Copy, Check, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { supabase, secureAPI } from '@/lib/supabase'; // Import secureAPI
+import { supabase, secureAPI } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthStore } from '@/store/auth-store';
 
@@ -29,7 +29,8 @@ export default function EmailPoolPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const { toast } = useToast();
   
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore(); // Get auth state
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
+  const [submitting, setSubmitting] = useState(false); // New state for dialog button
 
   const [formData, setFormData] = useState({
     email: '',
@@ -50,7 +51,7 @@ export default function EmailPoolPage() {
     } else {
       setLoading(false);
     }
-  }, [isAuthenticated, isAuthLoading]); // Dependency on auth state
+  }, [isAuthenticated, isAuthLoading]);
 
   const loadEmails = async () => {
     try {
@@ -84,7 +85,6 @@ export default function EmailPoolPage() {
     }
   };
 
-  // *** THIS FUNCTION IS NOW FIXED ***
   const handleAddEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.email || !formData.username || !formData.password) {
@@ -92,8 +92,9 @@ export default function EmailPoolPage() {
       return;
     }
 
+    setSubmitting(true);
     try {
-      // Use the secure RPC function instead of a direct insert
+      // Use the secure RPC function to add the sender
       await secureAPI.add_sender_secure(
         formData.email,
         formData.smtp_server,
@@ -120,24 +121,26 @@ export default function EmailPoolPage() {
         title: 'Error Adding Email',
         description: error.message
       });
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const toggleEmailStatus = async (id: string, current: boolean) => {
     try {
-      const { error } = await supabase
-        .from('sender_pool')
-        .update({ is_active: !current })
-        .eq('id', id);
+      // FIX: Use the secure RPC function to toggle status, avoiding the "permission denied" error
+      await secureAPI.toggleSenderStatusSecure(id, !current);
 
-      if (error) throw error;
       loadEmails();
       toast({
         title: 'Success',
         description: `Email ${!current ? 'activated' : 'deactivated'}`
       });
     } catch (error: any) {
-      toast({ title: 'Error', description: error.message });
+      toast({ 
+        title: 'Error', 
+        description: error.message || 'Failed to toggle sender status' 
+      });
     }
   };
 
@@ -210,7 +213,10 @@ export default function EmailPoolPage() {
                   placeholder="smtp password"
                 />
               </div>
-              <Button type="submit" className="w-full">Add to Pool</Button>
+              <Button type="submit" className="w-full" disabled={submitting}>
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Add to Pool
+              </Button>
             </form>
           </DialogContent>
         </Dialog>

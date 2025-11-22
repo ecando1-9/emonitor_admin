@@ -299,6 +299,19 @@ export const secureAPI = {
     if (error) throw error;
     return data;
   },
+  async toggleSenderStatusSecure(senderId: string, isActive: boolean) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase.rpc('toggle_sender_status', {
+      sender_id: senderId,
+      is_active_val: isActive,
+      admin_id: user.id
+    });
+    
+    if (error) throw error;
+    return data;
+  },
   // START: ADD THIS NEW FUNCTION
   async add_sender_secure(
     email: string,
