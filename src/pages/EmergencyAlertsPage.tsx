@@ -74,8 +74,7 @@ export default function EmergencyAlertsPage() {
         console.error('Error loading alerts:', error);
         toast({
           title: 'Error Loading Alerts',
-          description: error.message,
-          variant: 'destructive'
+          description: error.message
         });
         setAlerts([]);
         return;
@@ -86,8 +85,7 @@ export default function EmergencyAlertsPage() {
       console.error('Failed to load alerts:', err);
       toast({
         title: 'Error Loading Alerts',
-        description: err.message || 'Failed to load emergency alerts',
-        variant: 'destructive'
+        description: err.message || 'Failed to load emergency alerts'
       });
       setAlerts([]);
     } finally {
