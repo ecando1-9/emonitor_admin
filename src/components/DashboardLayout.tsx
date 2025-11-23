@@ -41,7 +41,7 @@ interface NavItem {
   name: string;
   href: string;
   icon: any;
-  badge?: string | number;
+  badge?: string | number; // This allows for an optional badge
 }
 
 const navigation: NavItem[] = [
@@ -52,7 +52,8 @@ const navigation: NavItem[] = [
   { name: 'Email Pool', href: '/email-pool', icon: Mail },
   { name: 'Promotions', href: '/promotions', icon: Tag },
   { name: 'Plans', href: '/plans', icon: Settings },
-  { name: 'Security', href: '/security', icon: Shield, badge: 3 },
+  // FIX: Removed hardcoded badge: 3 from the Security link
+  { name: 'Security', href: '/security', icon: Shield },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Audit Log', href: '/audit', icon: FileText },
   { name: 'Emergency Alerts', href: '/emergency-alerts', icon: AlertTriangle },
@@ -109,7 +110,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
           {/* Right side actions */}
           <div className="flex items-center gap-2 ml-auto">
-            {/* Notifications */}
+            {/* Notifications - NOTE: This notification badge is also hardcoded (value: 3) and should be updated dynamically later. */}
             <Button variant="ghost" size="icon" className="relative">
               <Bell className="h-5 w-5" />
               <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-[10px]">

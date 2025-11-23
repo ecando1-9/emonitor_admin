@@ -6,11 +6,11 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Plus, Trash2, Shield, Lock } from 'lucide-react';
+import { AlertCircle, Plus, Trash2, Shield, Lock, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { supabase } from '@/lib/supabase';
+import { supabase, secureAPI } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
-import { useAuthStore } from '@/store/auth-store'; // 1. Import auth store
+import { useAuthStore } from '@/store/auth-store';
 
 interface BlockedIP {
   id: string;
@@ -23,8 +23,9 @@ export default function SecurityPage() {
   const [blockedIPs, setBlockedIPs] = useState<BlockedIP[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false); // New state for dialog button
   const { toast } = useToast();
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore(); // 2. Get auth state
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
 
   const [formData, setFormData] = useState({
     ip_address: '',
@@ -32,7 +33,6 @@ export default function SecurityPage() {
   });
 
   useEffect(() => {
-    // 3. Add auth guards
     if (isAuthLoading) {
       setLoading(true);
       return;
@@ -42,11 +42,12 @@ export default function SecurityPage() {
     } else {
       setLoading(false);
     }
-  }, [isAuthenticated, isAuthLoading]); // 4. Add dependencies
+  }, [isAuthenticated, isAuthLoading]);
 
   const loadBlockedIPs = async () => {
     try {
       setLoading(true);
+      // NOTE: SELECT should generally work fine for admins due to RLS policy 'Admins can view blocked_ips'
       const { data, error } = await supabase
         .from('blocked_ips')
         .select('id, ip_address, reason, created_at')
@@ -54,7 +55,6 @@ export default function SecurityPage() {
 
       if (error) {
         console.warn('Error loading blocked IPs:', error);
-        // Table might not exist or no access
         setBlockedIPs([]);
         return;
       }
@@ -69,8 +69,8 @@ export default function SecurityPage() {
 
   const handleAddBlockIP = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.ip_address) {
-      toast({ title: 'Error', description: 'Please enter an IP address' });
+    if (!formData.ip_address || !formData.reason) { // Added reason as required
+      toast({ title: 'Error', description: 'Please enter an IP address and reason' });
       return;
     }
 
@@ -81,15 +81,13 @@ export default function SecurityPage() {
       return;
     }
 
+    setSubmitting(true);
     try {
-      const { error } = await supabase
-        .from('blocked_ips')
-        .insert({
-          ip_address: formData.ip_address,
-          reason: formData.reason || 'Manual block'
-        });
-
-      if (error) throw error;
+      // FIX: Use secure RPC wrapper for INSERT
+      await secureAPI.addBlockedIPSecure(
+        formData.ip_address,
+        formData.reason
+      );
 
       toast({
         title: 'Success',
@@ -102,28 +100,29 @@ export default function SecurityPage() {
     } catch (error: any) {
       toast({
         title: 'Error',
-        description: error.message
+        description: error.message || 'Failed to block IP'
       });
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const unblockIP = async (id: string) => {
     if (!confirm('Unblock this IP address?')) return;
-
+    
+    setLoading(true); // Re-use loading state for the table after action
     try {
-      const { error } = await supabase
-        .from('blocked_ips')
-        .delete()
-        .eq('id', id);
+      // FIX: Use secure RPC wrapper for DELETE
+      await secureAPI.removeBlockedIPSecure(id);
 
-      if (error) throw error;
       toast({
         title: 'Success',
         description: 'IP address unblocked'
       });
       loadBlockedIPs();
     } catch (error: any) {
-      toast({ title: 'Error', description: error.message });
+      toast({ title: 'Error', description: error.message || 'Failed to unblock IP' });
+      setLoading(false);
     }
   };
 
@@ -161,10 +160,14 @@ export default function SecurityPage() {
                 <Input
                   value={formData.reason}
                   onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                  placeholder="e.g., Suspicious activity"
+                  placeholder="e.g., Suspicious activity (Required)"
+                  required
                 />
               </div>
-              <Button type="submit" className="w-full">Block IP</Button>
+              <Button type="submit" className="w-full" disabled={submitting}>
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Block IP
+              </Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -255,7 +258,9 @@ export default function SecurityPage() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="text-center py-4">Loading...</div>
+            <div className="text-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+            </div>
           ) : blockedIPs.length === 0 ? (
             <Alert>
               <AlertCircle className="h-4 w-4" />
@@ -283,6 +288,7 @@ export default function SecurityPage() {
                           variant="destructive"
                           size="sm"
                           onClick={() => unblockIP(ip.id)}
+                          disabled={loading}
                         >
                           <Trash2 className="h-4 w-4 mr-1" />
                           Unblock

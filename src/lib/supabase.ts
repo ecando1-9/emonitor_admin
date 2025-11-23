@@ -273,13 +273,13 @@ export const secureAPI = {
     if (error) throw error;
     return data;
   },
-// START: ADD THIS NEW FUNCTION
+
   async getPlanAnalytics() {
     const { data, error } = await supabase.rpc('get_plan_analytics');
     if (error) throw error;
     return data;
   },
-  // END: ADD THIS NEW FUNCTION
+  
   async getPlanById(planId: string) {
     const { data, error } = await supabase
       .from('plans')
@@ -299,20 +299,9 @@ export const secureAPI = {
     if (error) throw error;
     return data;
   },
-  async toggleSenderStatusSecure(senderId: string, isActive: boolean) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Not authenticated');
 
-    const { data, error } = await supabase.rpc('toggle_sender_status', {
-      sender_id: senderId,
-      is_active_val: isActive,
-      admin_id: user.id
-    });
-    
-    if (error) throw error;
-    return data;
-  },
-  // START: ADD THIS NEW FUNCTION
+  // === EMAIL POOL MANAGEMENT ===
+
   async add_sender_secure(
     email: string,
     server: string,
@@ -332,8 +321,7 @@ export const secureAPI = {
     if (error) throw error;
     return data;
   },
-  // END: ADD THIS NEW FUNCTION
-  // START: ADD THIS NEW FUNCTION
+
   async assignSenderSecure(userId: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
@@ -345,8 +333,25 @@ export const secureAPI = {
     if (error) throw error;
     return data;
   },
-  // END: ADD THIS NEW FUNCTION
-async applyPromotionSecure(userId: string, promoCode: string) {
+
+  // FIX: Added to resolve "permission denied for table sender_pool"
+  async toggleSenderStatusSecure(senderId: string, isActive: boolean) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase.rpc('toggle_sender_status', {
+      sender_id: senderId,
+      is_active_val: isActive,
+      admin_id: user.id
+    });
+    
+    if (error) throw error;
+    return data;
+  },
+  
+  // === PROMOTIONS ===
+  
+  async applyPromotionSecure(userId: string, promoCode: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
@@ -358,8 +363,9 @@ async applyPromotionSecure(userId: string, promoCode: string) {
     if (error) throw error;
     return data;
   },
-  // === ADMIN ROLES ===
-// START: ADD THIS NEW FUNCTION
+
+  // === USER STATUS MANAGEMENT (SuperAdmin) ===
+
   async adminSetUserStatusSecure(userId: string, newStatus: string, justification: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
@@ -373,7 +379,36 @@ async applyPromotionSecure(userId: string, promoCode: string) {
     if (error) throw error;
     return data;
   },
-  // END: ADD THIS NEW FUNCTION
+
+  // === SECURITY / BLOCKED IPS (FIX for SecurityPage) ===
+
+  async addBlockedIPSecure(ipAddress: string, reason: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase.rpc('add_blocked_ip_secure', {
+      ip_addr: ipAddress,
+      reason_text: reason,
+      admin_id: user.id
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async removeBlockedIPSecure(blockedIpId: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase.rpc('remove_blocked_ip_secure', {
+      blocked_ip_id: blockedIpId,
+      admin_id: user.id
+    });
+    if (error) throw error;
+    return data;
+  },
+  
+  // === ADMIN ROLES ===
+  
   async createAdminRole(userId: string, role: 'SuperAdmin' | 'SupportAdmin' | 'ReadOnly') {
     const { data, error } = await supabase
       .from('admin_roles')
