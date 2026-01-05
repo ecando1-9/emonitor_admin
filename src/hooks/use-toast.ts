@@ -7,6 +7,7 @@ type ToasterToast = {
   action?: React.ReactNode
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  variant?: "default" | "destructive"
 }
 
 const TOAST_LIMIT = 1
@@ -14,21 +15,21 @@ const TOAST_REMOVE_DELAY = 1000000
 
 type ToastActionType =
   | {
-      type: "ADD_TOAST"
-      toast: ToasterToast
-    }
+    type: "ADD_TOAST"
+    toast: ToasterToast
+  }
   | {
-      type: "UPDATE_TOAST"
-      toast: Partial<ToasterToast>
-    }
+    type: "UPDATE_TOAST"
+    toast: Partial<ToasterToast>
+  }
   | {
-      type: "DISMISS_TOAST"
-      toastId?: string
-    }
+    type: "DISMISS_TOAST"
+    toastId?: string
+  }
   | {
-      type: "REMOVE_TOAST"
-      toastId?: string
-    }
+    type: "REMOVE_TOAST"
+    toastId?: string
+  }
 
 let count = 0
 
@@ -95,9 +96,9 @@ export const reducer = (state: State, action: ToastActionType): State => {
         toasts: state.toasts.map((t) =>
           t.id === toastId || toastId === undefined
             ? {
-                ...t,
-                open: false,
-              }
+              ...t,
+              open: false,
+            }
             : t
         ),
       }
