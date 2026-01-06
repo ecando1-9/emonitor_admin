@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useToast } from '@/hooks/use-toast';
 import { supabase, secureAPI } from '@/lib/supabase';
 import { Loader2, Edit2, Mail, AlertCircle, Sparkles, Ticket } from 'lucide-react';
-import { useAuthStore } from '@/store/auth-store'; 
+import { useAuthStore } from '@/store/auth-store';
 import { Separator } from '@/components/ui/separator';
 
 interface UserWithDetails {
@@ -19,8 +19,8 @@ interface UserWithDetails {
   plan_name: string;
   status: string;
   trial_ends_at: string | null;
-  subscription_ends_at: string | null; 
-  created_at: string; 
+  subscription_ends_at: string | null;
+  created_at: string;
   device_hash: string;
   trial_count: number;
   sender_email?: string;
@@ -49,11 +49,17 @@ export default function SubscriptionsPage() {
   const [selectedUser, setSelectedUser] = useState<UserWithDetails | null>(null);
   const [newPlan, setNewPlan] = useState<string>('');
   const [upgrading, setUpgrading] = useState(false);
-  const [assigningEmail, setAssigningEmail] = useState<string | null>(null); 
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore(); 
+
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStore();
 
   const [promoCode, setPromoCode] = useState('');
   const [applyingPromo, setApplyingPromo] = useState(false);
+
+  // New state for manual email assignment
+  const [senderPool, setSenderPool] = useState<any[]>([]);
+  const [manageEmailUserId, setManageEmailUserId] = useState<string | null>(null);
+  const [selectedPoolId, setSelectedPoolId] = useState<string>('');
+  const [updatingEmail, setUpdatingEmail] = useState(false);
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -65,7 +71,7 @@ export default function SubscriptionsPage() {
     } else {
       setLoading(false);
     }
-  }, [isAuthenticated, isAuthLoading]); 
+  }, [isAuthenticated, isAuthLoading]);
 
   const loadData = async () => {
     try {
@@ -102,6 +108,14 @@ export default function SubscriptionsPage() {
         }));
         setSenders(formatted);
       }
+
+      // Fetch Sender Pool for loading in the dropdown
+      const { data: poolData } = await supabase
+        .from('sender_pool')
+        .select('id, smtp_email, assigned_count, is_active')
+        .eq('is_active', true)
+        .order('assigned_count', { ascending: true });
+      setSenderPool(poolData || []);
     } catch (err: any) {
       console.error('Load error:', err);
       toast({
@@ -141,26 +155,8 @@ export default function SubscriptionsPage() {
     }
   };
 
-  const handleAssignEmail = async (userId: string) => {
-    setAssigningEmail(userId);
-    try {
-      const result: any = await secureAPI.assignSenderSecure(userId);
-      toast({
-        title: 'Success',
-        description: `Email ${result.sender_email} assigned to user.`
-      });
-      await loadData(); 
-    } catch (err: any) {
-      console.error('Email assignment error:', err);
-      toast({
-        title: 'Error Assigning Email',
-        description: err.message,
-      });
-    } finally {
-      setAssigningEmail(null);
-    }
-  };
-  
+
+
   const handleApplyPromo = async () => {
     if (!selectedUser || !promoCode) return;
 
@@ -171,8 +167,8 @@ export default function SubscriptionsPage() {
         title: 'Promotion Applied',
         description: `Code ${result.promo_code} applied to user.`
       });
-      await loadData(); 
-      setPromoCode(''); 
+      await loadData();
+      setPromoCode('');
     } catch (err: any) {
       console.error('Promo apply error:', err);
       toast({
@@ -184,9 +180,33 @@ export default function SubscriptionsPage() {
     }
   };
 
+  const handleUpdateEmail = async () => {
+    if (!manageEmailUserId || !selectedPoolId) return;
+
+    setUpdatingEmail(true);
+    try {
+      await secureAPI.updateSenderAssignmentSecure(manageEmailUserId, selectedPoolId);
+      toast({
+        title: 'Success',
+        description: 'Email assignment updated.'
+      });
+      await loadData();
+      setManageEmailUserId(null); // Close dialog
+      setSelectedPoolId('');
+    } catch (err: any) {
+      console.error('Update email error:', err);
+      toast({
+        title: 'Error Updating Email',
+        description: err.message
+      });
+    } finally {
+      setUpdatingEmail(false);
+    }
+  };
+
   const getSenderEmail = (userId: string) => {
     const sender = senders.find(s => s.user_id === userId);
-    return sender?.sender_email || null; 
+    return sender?.sender_email || null;
   };
 
   if (loading) {
@@ -205,7 +225,7 @@ export default function SubscriptionsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-         <Card>
+        <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium">Total Users</CardTitle>
           </CardHeader>
@@ -263,19 +283,18 @@ export default function SubscriptionsPage() {
                     <TableCell className="font-medium">{user.email}</TableCell>
                     <TableCell>
                       {user.status === 'trialing' ? (
-                          <span className="text-muted-foreground italic">N/A (Trial)</span>
-                        ) : (
+                        <span className="text-muted-foreground italic">N/A (Trial)</span>
+                      ) : (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
                           {user.plan_name || 'N/A'}
                         </span>
                       )}
                     </TableCell>
                     <TableCell>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium ${
-                        user.status === 'trialing' ? 'bg-yellow-100 text-yellow-800' :
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium ${user.status === 'trialing' ? 'bg-yellow-100 text-yellow-800' :
                         user.status === 'active' ? 'bg-green-100 text-green-800' :
-                        'bg-red-100 text-red-800'
-                      }`}>
+                          'bg-red-100 text-red-800'
+                        }`}>
                         {user.status}
                       </span>
                     </TableCell>
@@ -288,13 +307,13 @@ export default function SubscriptionsPage() {
                     <TableCell>
                       <Dialog>
                         <DialogTrigger asChild>
-                          <Button 
-                            variant="outline" 
+                          <Button
+                            variant="outline"
                             size="sm"
                             onClick={() => {
                               setSelectedUser(user);
-                              setNewPlan(user.plan_id); 
-                              setPromoCode(''); 
+                              setNewPlan(user.plan_id);
+                              setPromoCode('');
                             }}
                           >
                             <Edit2 className="w-4 h-4 mr-1" />
@@ -324,7 +343,7 @@ export default function SubscriptionsPage() {
                                 </SelectContent>
                               </Select>
                             </div>
-                            <Button 
+                            <Button
                               onClick={handleUpgradePlan}
                               disabled={upgrading || !newPlan || (newPlan === user.plan_id && user.status === 'active')}
                               className="w-full"
@@ -391,8 +410,7 @@ export default function SubscriptionsPage() {
               <TableBody>
                 {users.map((user) => {
                   const sender = senders.find(s => s.user_id === user.user_id);
-                  const isLoading = assigningEmail === user.user_id;
-                  
+
                   return (
                     <TableRow key={user.user_id}>
                       <TableCell>{user.email}</TableCell>
@@ -404,25 +422,66 @@ export default function SubscriptionsPage() {
                           )}
                         </div>
                       </TableCell>
-                      {/* *** BUG FIX IS HERE *** */}
-                      {/* This will now show the correct date */}
                       <TableCell>{sender ? new Date(sender.assigned_at).toLocaleString() : '—'}</TableCell>
                       <TableCell className="text-right">
-                        {!sender && (
-                          <Button 
-                            variant="secondary" 
-                            size="sm"
-                            onClick={() => handleAssignEmail(user.user_id)}
-                            disabled={isLoading}
-                          >
-                            {isLoading ? (
-                              <Loader2 className="w-4 h-4 animate-spin mr-1" />
-                            ) : (
-                              <Sparkles className="w-4 h-4 mr-1" />
-                            )}
-                            Assign
-                          </Button>
-                        )}
+                        <Dialog open={manageEmailUserId === user.user_id} onOpenChange={(open) => {
+                          if (!open) {
+                            setManageEmailUserId(null);
+                            setSelectedPoolId('');
+                          }
+                        }}>
+                          <DialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setManageEmailUserId(user.user_id);
+                                setSelectedPoolId(sender?.sender_id || '');
+                              }}
+                            >
+                              <Edit2 className="w-4 h-4 mr-1" />
+                              {sender ? 'Change' : 'Assign'}
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Manage Email Assignment</DialogTitle>
+                              <DialogDescription>
+                                Select an SMTP email from the pool for <strong>{user.email}</strong>
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4 py-4">
+                              <div className="space-y-2">
+                                <Label>Select Sender Email</Label>
+                                <Select value={selectedPoolId} onValueChange={setSelectedPoolId}>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select an email..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {senderPool.map((poolItem) => (
+                                      <SelectItem key={poolItem.id} value={poolItem.id}>
+                                        {poolItem.smtp_email} (Assigned: {poolItem.assigned_count})
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {sender && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Current: {sender.sender_email}
+                                  </p>
+                                )}
+                              </div>
+                              <Button
+                                onClick={handleUpdateEmail}
+                                className="w-full"
+                                disabled={updatingEmail || !selectedPoolId}
+                              >
+                                {updatingEmail ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                                Save Assignment
+                              </Button>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
                       </TableCell>
                     </TableRow>
                   );

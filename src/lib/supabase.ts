@@ -349,6 +349,20 @@ export const secureAPI = {
     return data;
   },
 
+  async updateSenderAssignmentSecure(userId: string, newSenderId: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase.rpc('update_sender_assignment_secure', {
+      target_user_id: userId,
+      new_sender_id: newSenderId,
+      admin_id: user.id
+    });
+
+    if (error) throw error;
+    return data;
+  },
+
   // === PROMOTIONS ===
 
   async applyPromotionSecure(userId: string, promoCode: string) {
