@@ -78,7 +78,7 @@ export interface AuditLog {
 
 export const secureAPI = {
   // === AUTH & ADMIN ===
-  
+
   // **** THIS FUNCTION IS NOW FIXED ****
   // It now calls an RPC function to avoid the infinite RLS loop.
   async getCurrentAdmin() {
@@ -89,7 +89,7 @@ export const secureAPI = {
     }
 
     console.log('[Admin] Checking admin role for user:', user.id);
-    
+
     // This is the fix:
     // We call the 'get_admin_role' RPC function, which is SECURITY DEFINER
     // and can safely read the admin_roles table without hitting RLS.
@@ -125,9 +125,9 @@ export const secureAPI = {
       console.log('[RPC] Calling get_users_with_subscriptions...');
       const { data: { user } } = await supabase.auth.getUser();
       console.log('[RPC] Current user:', user?.id);
-      
+
       const { data, error } = await supabase.rpc('get_users_with_subscriptions');
-      
+
       if (error) {
         console.error('[RPC ERROR] get_users_with_subscriptions failed:', {
           message: error.message,
@@ -136,7 +136,7 @@ export const secureAPI = {
         });
         throw error;
       }
-      
+
       console.log('[RPC] Success, returned', data?.length || 0, 'records');
       return data;
     } catch (err) {
@@ -173,7 +173,7 @@ export const secureAPI = {
 
     try {
       console.log('[RPC] Calling upgrade_plan_secure...', { userId, newPlanId });
-      
+
       const { data, error } = await supabase.rpc('upgrade_plan_secure', {
         target_user_id: userId,
         new_plan_id: newPlanId,
@@ -204,7 +204,7 @@ export const secureAPI = {
     try {
       console.log('[RPC] Calling get_active_devices...');
       const { data, error } = await supabase.rpc('get_active_devices');
-      
+
       if (error) {
         console.error('[RPC ERROR] get_active_devices failed:', {
           message: error.message,
@@ -212,7 +212,7 @@ export const secureAPI = {
         });
         throw error;
       }
-      
+
       console.log('[RPC] Success, returned', data?.length || 0, 'devices');
       return data;
     } catch (err) {
@@ -279,7 +279,7 @@ export const secureAPI = {
     if (error) throw error;
     return data;
   },
-  
+
   async getPlanById(planId: string) {
     const { data, error } = await supabase
       .from('plans')
@@ -344,13 +344,13 @@ export const secureAPI = {
       is_active_val: isActive,
       admin_id: user.id
     });
-    
+
     if (error) throw error;
     return data;
   },
-  
+
   // === PROMOTIONS ===
-  
+
   async applyPromotionSecure(userId: string, promoCode: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
@@ -406,9 +406,9 @@ export const secureAPI = {
     if (error) throw error;
     return data;
   },
-  
+
   // === ADMIN ROLES ===
-  
+
   async createAdminRole(userId: string, role: 'SuperAdmin' | 'SupportAdmin' | 'ReadOnly') {
     const { data, error } = await supabase
       .from('admin_roles')
@@ -449,5 +449,80 @@ export const secureAPI = {
       .select();
     if (error) throw error;
     return data?.[0];
+  },
+
+  // === APP CONFIG MANAGEMENT ===
+
+  async getAppConfig(keys: string[]) {
+    const { data, error } = await supabase
+      .from('app_config')
+      .select('key, value, description, updated_at, updated_by')
+      .in('key', keys);
+    if (error) throw error;
+    return data;
+  },
+
+  async updateAppConfig(key: string, value: string, updatedBy: string | null) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+    if (!updatedBy) throw new Error('Admin ID is required');
+
+    const { data, error } = await supabase.rpc('update_app_config_secure', {
+      config_key: key,
+      config_value: value,
+      admin_id: updatedBy
+    });
+
+    if (error) throw error;
+    return data;
+  },
+
+  // === SUSPICIOUS LOGIN MONITORING ===
+
+  async getSuspiciousLogins(minAttempts: number = 5) {
+    const { data, error } = await supabase.rpc('get_suspicious_logins', {
+      min_failed_attempts: minAttempts
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async getLoginHistory(email: string) {
+    const { data, error } = await supabase.rpc('get_login_history_secure', {
+      target_email: email
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  // === MULTI-DEVICE LOGIN MONITORING ===
+
+  async getMultiDeviceLogins(minDevices: number = 2) {
+    const { data, error } = await supabase.rpc('get_multi_device_logins', {
+      min_device_count: minDevices
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async getUserSessions(userId: string) {
+    const { data, error } = await supabase.rpc('get_user_sessions', {
+      target_user_id: userId
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async terminateUserSession(userId: string, deviceHash: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase.rpc('terminate_user_session', {
+      target_user_id: userId,
+      target_device_hash: deviceHash,
+      admin_id: user.id
+    });
+    if (error) throw error;
+    return data;
   }
 };

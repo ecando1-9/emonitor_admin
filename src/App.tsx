@@ -14,6 +14,9 @@ import AnalyticsPage from './pages/AnalyticsPage';
 import AuditLogPage from './pages/AuditLogPage';
 import SubscriptionsPage from './pages/SubscriptionsPage';
 import EmergencyAlertsPage from './pages/EmergencyAlertsPage';
+import TrialSettingsPage from './pages/TrialSettingsPage';
+import SuspiciousLoginsPage from './pages/SuspiciousLoginsPage';
+import MultiDeviceLoginsPage from './pages/MultiDeviceLoginsPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 // AppLayout wrapper to handle auth checks and redirects
@@ -72,6 +75,9 @@ const AppRoutes = [
       { path: '/analytics', element: <AnalyticsPage /> },
       { path: '/audit', element: <AuditLogPage /> },
       { path: '/emergency-alerts', element: <EmergencyAlertsPage /> },
+      { path: '/trial-settings', element: <TrialSettingsPage /> },
+      { path: '/suspicious-logins', element: <SuspiciousLoginsPage /> },
+      { path: '/multi-device-logins', element: <MultiDeviceLoginsPage /> },
     ],
   },
   {

@@ -10,13 +10,15 @@ import {
   BarChart3,
   FileText,
   Settings,
+  Settings2,
   LogOut,
   Menu,
   X,
   Bell,
   Search,
   CreditCard,
-  AlertTriangle
+  AlertTriangle,
+  ShieldAlert
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,6 +59,9 @@ const navigation: NavItem[] = [
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Audit Log', href: '/audit', icon: FileText },
   { name: 'Emergency Alerts', href: '/emergency-alerts', icon: AlertTriangle },
+  { name: 'Trial Settings', href: '/trial-settings', icon: Settings2 },
+  { name: 'Suspicious Logins', href: '/suspicious-logins', icon: ShieldAlert },
+  { name: 'Multi-Device Logins', href: '/multi-device-logins', icon: Users },
 ];
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
@@ -167,7 +172,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             {navigation.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.href;
-              
+
               return (
                 <Link
                   key={item.name}
